@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+coverage/
+release/
+native-mac/build/
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+.caruso-data/
+.playwright-cli/
+assets/mac/CarusoReborn.iconset/
+assets/mac/icon-1024.png

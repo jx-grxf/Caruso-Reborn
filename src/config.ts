@@ -3,7 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-dotenv.config();
+function getEnvPath(): string {
+  return process.env.CARUSO_REBORN_ENV_PATH
+    ? path.resolve(process.env.CARUSO_REBORN_ENV_PATH)
+    : path.resolve(process.cwd(), ".env");
+}
+
+dotenv.config({ path: getEnvPath() });
 
 const NETWORK_INTERFACE_ENV = "NETWORK_INTERFACE";
 const NETWORK_ADDRESS_ENV = "NETWORK_ADDRESS";
@@ -227,7 +233,8 @@ export async function persistNetworkSelection(options: {
 }) {
   const port = options.port ?? getRequiredNumber("PORT", 3847);
   const publicBaseUrl = `http://${options.address}:${port}`;
-  const envPath = path.resolve(process.cwd(), ".env");
+  const envPath = getEnvPath();
+  await fs.mkdir(path.dirname(envPath), { recursive: true });
 
   let content = "";
   try {

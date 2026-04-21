@@ -29,9 +29,11 @@
     "onboard": "node scripts/dev-runner.mjs --watch false --entry src/onboard.ts",
     "dev": "node scripts/dev-runner.mjs",
     "dev:desktop": "npm run build && electron .",
+    "backend:native": "npm run build && node dist/src/native-server.js",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/index.js",
     "desktop": "npm run build && electron .",
+    "dist:mac:native": "bash scripts/build-native-mac-app.sh",
     "check": "tsc --noEmit -p tsconfig.json",
     "pack:mac": "npm run assets:mac && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:mac": "npm run assets:mac && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg zip"

@@ -11,7 +11,14 @@ import fastifyStatic from "@fastify/static";
 import ffmpegPath from "ffmpeg-static";
 import Fastify from "fastify";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { config as baseConfig, resolveActivePublicBaseUrl } from "./config.js";
+import {
+  config as baseConfig,
+  listNetworkCandidates,
+  persistNetworkSelection,
+  pickBestNetworkCandidate,
+  resolveActivePublicBaseUrl,
+  type NetworkSelectionMode
+} from "./config.js";
 import { createRangedReadStream, getMimeType, isPathAllowed, scanLocalTracks } from "./local-library.js";
 import { getDeezerCapabilities } from "./providers/deezer.js";
 import { searchRadioBrowserStations } from "./providers/radio-browser.js";
@@ -45,6 +52,14 @@ export type AppContext = {
 };
 
 let previousCpuSnapshot = takeCpuSnapshot();
+
+type LibrarySnapshot = {
+  folders: string[];
+  tracks: Awaited<ReturnType<typeof scanLocalTracks>>;
+  baseUrl: string;
+  generatedAt: number;
+  cacheKey: string;
+};
 
 class HttpError extends Error {
   constructor(
@@ -390,6 +405,38 @@ export async function createApp(dataDir: string, options?: {
         }
   });
 
+  let cachedLibrarySnapshot: LibrarySnapshot | null = null;
+
+  async function getLibrarySnapshot(forceRefresh = false): Promise<LibrarySnapshot> {
+    const runtimeConfig = mergeConfig(await storage.getConfig());
+    const folders = await storage.getLibraryFolders();
+    const baseUrl = runtimeConfig.publicBaseUrl || baseConfig.publicBaseUrl;
+    const cacheKey = JSON.stringify({ folders, baseUrl });
+
+    if (
+      !forceRefresh &&
+      cachedLibrarySnapshot &&
+      cachedLibrarySnapshot.cacheKey === cacheKey &&
+      Date.now() - cachedLibrarySnapshot.generatedAt < 15_000
+    ) {
+      return cachedLibrarySnapshot;
+    }
+
+    cachedLibrarySnapshot = {
+      folders,
+      tracks: await scanLocalTracks(folders, baseUrl),
+      baseUrl,
+      generatedAt: Date.now(),
+      cacheKey
+    };
+
+    return cachedLibrarySnapshot;
+  }
+
+  function invalidateLibrarySnapshot() {
+    cachedLibrarySnapshot = null;
+  }
+
   app.addContentTypeParser(["text/xml", "application/xml", "application/soap+xml"], { parseAs: "string" }, (_request, body, done) => {
     done(null, body);
   });
@@ -430,8 +477,7 @@ export async function createApp(dataDir: string, options?: {
 
   app.get("/api/status", async () => {
     const runtimeConfig = mergeConfig(await storage.getConfig());
-    const folders = await storage.getLibraryFolders();
-    const tracks = await scanLocalTracks(folders, runtimeConfig.publicBaseUrl || baseConfig.publicBaseUrl);
+    const librarySnapshot = await getLibrarySnapshot();
     const favorites = await storage.getTuneInFavorites();
     const memoryUsage = process.memoryUsage();
     const totalMemory = os.totalmem();
@@ -463,8 +509,8 @@ export async function createApp(dataDir: string, options?: {
       },
       config: runtimeConfig,
       library: {
-        folders,
-        trackCount: tracks.length
+        folders: librarySnapshot.folders,
+        trackCount: librarySnapshot.tracks.length
       },
       tunein: {
         favorites
@@ -476,6 +522,52 @@ export async function createApp(dataDir: string, options?: {
   app.get("/api/config", async () => {
     const runtimeConfig = mergeConfig(await storage.getConfig());
     return runtimeConfig;
+  });
+
+  app.get("/api/network/candidates", async () => {
+    const candidates = listNetworkCandidates(baseConfig.port);
+    const recommended = pickBestNetworkCandidate(candidates);
+
+    return {
+      candidates,
+      recommendedAddress: recommended?.address,
+      recommendedInterfaceName: recommended?.interfaceName
+    };
+  });
+
+  app.post("/api/network/select", async (request) => {
+    const body = request.body as {
+      interfaceName?: string;
+      address?: string;
+      mode?: NetworkSelectionMode;
+    };
+
+    if (!body.interfaceName?.trim() || !body.address?.trim()) {
+      throw new HttpError("interfaceName and address are required.", 400);
+    }
+
+    const candidates = listNetworkCandidates(baseConfig.port);
+    const selectedCandidate = candidates.find((candidate) =>
+      candidate.interfaceName === body.interfaceName?.trim() &&
+      candidate.address === body.address?.trim()
+    );
+
+    if (!selectedCandidate) {
+      throw new HttpError("Selected network adapter is no longer available.", 400);
+    }
+
+    const selection = await persistNetworkSelection({
+      interfaceName: selectedCandidate.interfaceName,
+      address: selectedCandidate.address,
+      mode: body.mode === "manual" ? "manual" : "automatic",
+      port: baseConfig.port
+    });
+
+    return {
+      selection,
+      candidates,
+      recommendedAddress: pickBestNetworkCandidate(candidates)?.address
+    };
   });
 
   app.put("/api/config", async (request) => {
@@ -680,10 +772,10 @@ export async function createApp(dataDir: string, options?: {
     const actionName = headerAction || parsed.actionName;
     const runtimeConfig = mergeConfig(await storage.getConfig());
     const baseUrl = resolveRequestBaseUrl(request.headers.host, runtimeConfig.publicBaseUrl || baseConfig.publicBaseUrl);
-    const tracks = await scanLocalTracks(
-      await storage.getLibraryFolders(),
-      baseUrl
-    );
+    const librarySnapshot = await getLibrarySnapshot();
+    const tracks = librarySnapshot.baseUrl === baseUrl
+      ? librarySnapshot.tracks
+      : await scanLocalTracks(librarySnapshot.folders, baseUrl);
     const favorites = await storage.getTuneInFavorites();
     const updateId = computeContentUpdateId({ favorites, tracks });
 
@@ -736,28 +828,47 @@ export async function createApp(dataDir: string, options?: {
       throw new HttpError("Given path is not a directory.", 400);
     }
 
+    const folders = await storage.addLibraryFolder(folderPath);
+    invalidateLibrarySnapshot();
+
     return {
-      folders: await storage.addLibraryFolder(folderPath)
+      folders
+    };
+  });
+
+  app.post("/api/library/folders/remove", async (request) => {
+    const body = request.body as { path?: string };
+    if (!body.path?.trim()) {
+      throw new HttpError("Folder path is required.", 400);
+    }
+
+    const folders = await storage.removeLibraryFolder(body.path);
+    invalidateLibrarySnapshot();
+
+    return {
+      folders
     };
   });
 
   app.delete("/api/library/folders", async (request) => {
-    const folderPath = (request.query as { path?: string }).path;
+    const queryPath = (request.query as { path?: string }).path;
+    const bodyPath = (request.body as { path?: string } | undefined)?.path;
+    const folderPath = bodyPath ?? queryPath;
     if (!folderPath?.trim()) {
       throw new HttpError("Folder path is required.", 400);
     }
 
+    const folders = await storage.removeLibraryFolder(folderPath);
+    invalidateLibrarySnapshot();
+
     return {
-      folders: await storage.removeLibraryFolder(folderPath)
+      folders
     };
   });
 
   app.get("/api/library/tracks", async () => {
-    const runtimeConfig = mergeConfig(await storage.getConfig());
-    const folders = await storage.getLibraryFolders();
-
     return {
-      items: await scanLocalTracks(folders, runtimeConfig.publicBaseUrl || baseConfig.publicBaseUrl)
+      items: (await getLibrarySnapshot()).tracks
     };
   });
 
@@ -824,16 +935,15 @@ export async function createApp(dataDir: string, options?: {
 
   app.get("/media/local/:trackId", async (request, reply) => {
     const trackId = (request.params as { trackId: string }).trackId;
-    const runtimeConfig = mergeConfig(await storage.getConfig());
-    const folders = await storage.getLibraryFolders();
-    const tracks = await scanLocalTracks(folders, runtimeConfig.publicBaseUrl || baseConfig.publicBaseUrl);
+    const librarySnapshot = await getLibrarySnapshot();
+    const tracks = librarySnapshot.tracks;
     const track = tracks.find((item) => item.id === trackId);
 
     if (!track) {
       return reply.code(404).send({ error: "Track not found." });
     }
 
-    if (!isPathAllowed(track.absolutePath, folders)) {
+    if (!isPathAllowed(track.absolutePath, librarySnapshot.folders)) {
       return reply.code(403).send({ error: "Track path is not allowed." });
     }
 
@@ -920,9 +1030,7 @@ export async function createApp(dataDir: string, options?: {
     });
     await assertKnownRendererUrl(validatedDeviceDescriptionUrl.toString());
 
-    const runtimeConfig = mergeConfig(await storage.getConfig());
-    const folders = await storage.getLibraryFolders();
-    const tracks = await scanLocalTracks(folders, runtimeConfig.publicBaseUrl || baseConfig.publicBaseUrl);
+    const tracks = (await getLibrarySnapshot()).tracks;
     const track = tracks.find((item) => item.id === body.trackId);
 
     if (!track) {

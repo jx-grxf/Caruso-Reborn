@@ -5,5 +5,6 @@ dist
 .DS_Store
 .playwright-cli
 release
+native-mac/build
 assets/mac/CarusoReborn.iconset
 assets/mac/icon-1024.png
