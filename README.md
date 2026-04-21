@@ -34,6 +34,7 @@ This is an independent community project and is **not affiliated with T+A**.
 - [Highlights](#highlights)
 - [Why This Exists](#why-this-exists)
 - [Scope](#scope)
+- [Current Workflow](#current-workflow)
 - [Tech Stack](#tech-stack)
 - [Requirements](#requirements)
 - [Current Status](#current-status)
@@ -88,6 +89,15 @@ The goal is not to re-create the original T+A backend. The goal is to restore a 
 - **not an official T+A product**
 
 This repo is currently a **source-first project**. A packaged macOS app is now available as a **Beta** release and should still be treated as early-access software.
+
+---
+
+## Current Workflow
+
+1. Use `npm run onboard` for the guided first-run setup.
+2. Use `npm run dev` for the direct terminal control room.
+3. Use the packaged macOS Beta if you want the installed app path instead of running from source.
+4. Keep the bridge on a trusted local network so the Caruso can reach it reliably.
 
 ---
 
