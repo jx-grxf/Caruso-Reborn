@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/brand/caruso-reborn-icon.svg" alt="Caruso Reborn app icon" width="128" height="128">
+
 # Caruso Reborn
 
 **Bring practical internet radio and local playback back to first-generation T+A Caruso systems**

@@ -4,22 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Caruso Reborn</title>
+    <link rel="icon" href="/assets/caruso-reborn-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/caruso-reborn-icon.png" />
     <link rel="stylesheet" href="/styles.css?v=20260328-12" />
   </head>
   <body>
     <div class="shell">
       <header class="hero">
-        <div>
-          <p class="eyebrow" data-i18n="eyebrow"></p>
-          <h1 data-i18n="heroTitle"></h1>
-          <p class="lead" data-i18n="heroLead"></p>
-          <p class="credit">Johannes Grof (MIT)</p>
-          <nav class="hero-nav" aria-label="Sections">
-            <a href="#dashboard" class="pill pill-link">Dashboard</a>
-            <a href="#settings" class="pill pill-link">Settings</a>
-            <a href="#devices" class="pill pill-link">Renderer</a>
-            <a href="#library" class="pill pill-link">Library</a>
-          </nav>
+        <div class="hero-brand">
+          <img class="app-logo" src="/assets/caruso-reborn-icon.svg" alt="" aria-hidden="true" />
+          <div>
+            <p class="eyebrow" data-i18n="eyebrow"></p>
+            <h1 data-i18n="heroTitle"></h1>
+            <p class="lead" data-i18n="heroLead"></p>
+            <p class="credit">Johannes Grof (MIT)</p>
+            <nav class="hero-nav" aria-label="Sections">
+              <a href="#dashboard" class="pill pill-link">Dashboard</a>
+              <a href="#settings" class="pill pill-link">Settings</a>
+              <a href="#devices" class="pill pill-link">Renderer</a>
+              <a href="#library" class="pill pill-link">Library</a>
+            </nav>
+          </div>
         </div>
         <div class="hero-actions">
           <select id="languageSelect" class="select">
