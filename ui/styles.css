@@ -39,6 +39,7 @@ body {
 .shell,
 .panel,
 .hero,
+.hero-brand,
 .status-card,
 .item,
 strong,
@@ -63,9 +64,25 @@ strong,
   border-radius: 28px;
 }
 
-.hero > :first-child {
+.hero-brand {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+.hero-brand > :last-child {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.app-logo {
+  width: clamp(76px, 8vw, 118px);
+  aspect-ratio: 1;
+  display: block;
+  flex: 0 0 auto;
+  border-radius: 24%;
+  box-shadow: 0 18px 44px rgba(0, 76, 187, 0.35);
 }
 
 .eyebrow {
@@ -419,6 +436,10 @@ label {
     flex-direction: column;
   }
 
+  .hero-brand {
+    flex-direction: column;
+  }
+
   .hero-actions {
     width: 100%;
     justify-content: flex-start;
@@ -439,6 +460,10 @@ label {
   h1 {
     max-width: none;
     font-size: clamp(2rem, 12vw, 3.2rem);
+  }
+
+  .app-logo {
+    width: 88px;
   }
 
   .status-grid {
