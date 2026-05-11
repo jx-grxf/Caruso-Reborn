@@ -7,15 +7,34 @@ const rootDir = process.cwd();
 const assetsDir = path.join(rootDir, "assets", "mac");
 const brandDir = path.join(rootDir, "assets", "brand");
 const iconsetDir = path.join(assetsDir, "CarusoReborn.iconset");
-const sourceIconPath = path.join(brandDir, "caruso-reborn-icon.svg");
+const sourceIconPath = path.join(brandDir, "caruso-reborn-icon.icon");
+const brandIconPngPath = path.join(brandDir, "caruso-reborn-icon.png");
 const iconPngPath = path.join(assetsDir, "icon-1024.png");
 const iconIcnsPath = path.join(assetsDir, "icon.icns");
 const dmgBackgroundPath = path.join(assetsDir, "dmg-background.png");
 const dashboardAssetsDir = path.join(rootDir, "ui", "assets");
-const dashboardIconSvgPath = path.join(dashboardAssetsDir, "caruso-reborn-icon.svg");
 const dashboardIconPngPath = path.join(dashboardAssetsDir, "caruso-reborn-icon.png");
 
-const iconSvg = await fs.readFile(sourceIconPath, "utf8");
+const ictoolCandidates = [
+  process.env.ICTOOL_PATH,
+  "/Applications/Icon Composer.app/Contents/Executables/ictool",
+  "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool"
+].filter(Boolean);
+
+async function findExistingFile(paths) {
+  for (const candidate of paths) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Keep looking for the next known Icon Composer installation path.
+    }
+  }
+
+  throw new Error("Icon Composer ictool was not found. Install Icon Composer or set ICTOOL_PATH.");
+}
+
+const ictoolPath = await findExistingFile(ictoolCandidates);
 
 const dmgBackgroundSvg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1360" height="880" viewBox="0 0 1360 880">
@@ -64,13 +83,31 @@ const iconsetSizes = [
 await fs.rm(iconsetDir, { recursive: true, force: true });
 await fs.mkdir(iconsetDir, { recursive: true });
 await fs.mkdir(dashboardAssetsDir, { recursive: true });
-await fs.copyFile(sourceIconPath, dashboardIconSvgPath);
 
-await sharp(Buffer.from(iconSvg))
+execFileSync(ictoolPath, [
+  sourceIconPath,
+  "--export-image",
+  "--output-file",
+  iconPngPath,
+  "--platform",
+  "macOS",
+  "--rendition",
+  "Default",
+  "--width",
+  "1024",
+  "--height",
+  "1024",
+  "--scale",
+  "1"
+], {
+  stdio: "inherit"
+});
+
+await sharp(iconPngPath)
   .png()
-  .toFile(iconPngPath);
+  .toFile(brandIconPngPath);
 
-await sharp(Buffer.from(iconSvg))
+await sharp(iconPngPath)
   .resize(512, 512)
   .png()
   .toFile(dashboardIconPngPath);

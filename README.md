@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/brand/caruso-reborn-icon.svg" alt="Caruso Reborn app icon" width="128" height="128">
+<img src="assets/brand/caruso-reborn-icon.png" alt="Caruso Reborn app icon" width="128" height="128">
 
 # Caruso Reborn
 

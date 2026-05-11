@@ -1,0 +1,71 @@
+{
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "letter-a-svgrepo-com.svg",
+          "name" : "letter-a-svgrepo-com",
+          "position" : {
+            "scale" : 0.15,
+            "translation-in-points" : [
+              140.7823187620554,
+              -242.67817599684872
+            ]
+          }
+        },
+        {
+          "image-name" : "letter-t-svgrepo-com.svg",
+          "name" : "letter-t-svgrepo-com",
+          "position" : {
+            "scale" : 0.15,
+            "translation-in-points" : [
+              -140.7823187620554,
+              -242.67817599684872
+            ]
+          }
+        },
+        {
+          "fill" : "automatic",
+          "image-name" : "plus-svgrepo-com.svg",
+          "name" : "plus-svgrepo-com",
+          "position" : {
+            "scale" : 0.15,
+            "translation-in-points" : [
+              2.965487649425313,
+              -238.92817599684872
+            ]
+          }
+        },
+        {
+          "blend-mode" : "normal",
+          "image-name" : "radio-signal-1026-svgrepo-com.svg",
+          "name" : "radio-signal-1026-svgrepo-com",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0.002434000000107517,
+              41.07182400315128
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
