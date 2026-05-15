@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Typecheck and build
+  verify-node:
+    name: Node checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -41,5 +41,24 @@ jobs:
       - name: Run typecheck
         run: npm run check
 
+      - name: Run tests
+        run: npm test
+
+      - name: Run runtime dependency audit
+        run: npm audit --omit=dev
+
       - name: Run build
         run: npm run build
+
+  verify-native-mac:
+    name: Native macOS build
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build and test Swift package
+        working-directory: native-mac/CarusoRebornMac
+        run: swift test

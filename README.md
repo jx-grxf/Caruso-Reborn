@@ -16,7 +16,7 @@
 
 T+A no longer offers a practical native internet-radio path for older Caruso devices. This project exists to bring that workflow back in a way that still feels usable today: local, self-hosted, and focused on the Caruso as it actually behaves on a home network.
 
-Caruso Reborn turns your computer into a local terminal app, UPnP/DLNA media source, and station management dashboard so older Caruso units can browse saved stations, TuneIn categories, and local music again.
+Caruso Reborn turns your Mac into a local UPnP/DLNA bridge, station manager, and playback dashboard so older Caruso units can browse saved stations, TuneIn categories, and local music again.
 
 This is an independent community project and is **not affiliated with T+A**.
 
@@ -33,6 +33,7 @@ This is an independent community project and is **not affiliated with T+A**.
 - [Showcase](#showcase)
 - [Highlights](#highlights)
 - [Why This Exists](#why-this-exists)
+- [Who This Is For](#who-this-is-for)
 - [Scope](#scope)
 - [Current Workflow](#current-workflow)
 - [Tech Stack](#tech-stack)
@@ -79,6 +80,18 @@ The goal is not to re-create the original T+A backend. The goal is to restore a 
 
 ---
 
+## Who This Is For
+
+Caruso Reborn is for owners of first-generation T+A Caruso systems that still work on the local network but no longer have a practical internet-radio workflow.
+
+| Works best when | Not the right fit when |
+|---|---|
+| Your Caruso and Mac are on the same trusted home network | You need a hosted cloud service |
+| You want TuneIn-style radio and local folder playback | You need an official T+A integration |
+| You are comfortable with Beta Mac software | You need a signed/notarized stable release today |
+
+---
+
 ## Scope
 
 - **macOS-first**
@@ -88,16 +101,17 @@ The goal is not to re-create the original T+A backend. The goal is to restore a 
 - **not a hosted service**
 - **not an official T+A product**
 
-This repo is currently a **source-first project**. A packaged macOS app is now available as a **Beta** release and should still be treated as early-access software.
+The primary public path is now the **native macOS app (Beta)**. Source/TUI workflows remain available for developers and advanced users.
 
 ---
 
 ## Current Workflow
 
-1. Use `npm run onboard` for the guided first-run setup.
-2. Use `npm run dev` for the direct terminal control room.
-3. Use the packaged macOS Beta if you want the installed app path instead of running from source.
-4. Keep the bridge on a trusted local network so the Caruso can reach it reliably.
+1. Install or run the native macOS Beta.
+2. Select the network adapter your Caruso can reach.
+3. Discover the Caruso renderer.
+4. Search or browse stations and add working streams to the Caruso station list.
+5. On the Caruso, open the UPnP/DLNA media source and browse `TuneIn > Sender`.
 
 ---
 
@@ -150,19 +164,27 @@ Still rough or incomplete:
 
 ## Mac App (Beta)
 
-There is now a packaged **macOS app (Beta)** for easier local setup on Mac.
+There is now a packaged **macOS app (Beta)** for easier local setup on Mac. This is the recommended path for normal Mac users.
 
 - install it from the latest GitHub release DMG
 - treat the app as **Beta** and expect rough edges
 - the packaged app contains the shipped code and assets only; your local `.env`, `.caruso-data`, and other personal runtime files are created on your machine at first launch and are not bundled into the DMG
 
-If you want the most stable path, run the project from source. If you want the fastest Mac setup, use the DMG Beta.
+Current trust note: release signing and notarization are still being stabilized. If macOS warns about the app, use the source workflow until signed releases are available.
 
 ---
 
 ## Quick Start
 
-### First run
+### Fastest Mac Setup
+
+1. Download the latest DMG from GitHub Releases.
+2. Open Caruso Reborn.
+3. Pick the reachable network adapter.
+4. Discover your Caruso.
+5. Add a station and browse it on the Caruso under `TuneIn > Sender`.
+
+### Source Setup
 
 ```bash
 git clone https://github.com/jx-grxf/Caruso-Reborn.git
@@ -193,9 +215,6 @@ This opens the control-room TUI directly:
 ### Run from source
 
 ```bash
-git clone https://github.com/jx-grxf/Caruso-Reborn.git
-cd Caruso-Reborn
-npm install
 npm run quickstart
 ```
 
@@ -233,6 +252,7 @@ DATA_DIR=/custom/path/for/app-data
 
 - `PUBLIC_BASE_URL` must be reachable by the Caruso on your LAN
 - the browser dashboard itself is loaded locally via `127.0.0.1`
+- `DEEZER_ARL` is experimental and is never returned by the local API once saved
 - switching from LAN to Wi-Fi is supported, but the device may need a short rediscovery window
 - this repo is **not** published as an npm package; `"private": true` in `package.json` is intentional to prevent accidental publish
 
@@ -291,6 +311,7 @@ Useful commands:
 
 ```bash
 npm run check
+npm test
 npm run build
 npm run dev
 npm run desktop
@@ -308,7 +329,7 @@ If you want to contribute, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Roadmap Notes
 
-- package desktop releases for easier non-dev installation
+- stabilize signed and notarized macOS releases
 - improve public-facing screenshots and first-run docs
 - finish or remove experimental Deezer work
 - extend stream validation and metadata quality indicators
