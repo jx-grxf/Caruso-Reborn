@@ -6,6 +6,9 @@
   "license": "MIT",
   "type": "module",
   "main": "dist/electron/main.js",
+  "bin": {
+    "taclient": "./bin/taclient.js"
+  },
   "description": "Local streaming hub for first-generation T+A Caruso devices with TuneIn and Deezer providers.",
   "keywords": [
     "caruso",

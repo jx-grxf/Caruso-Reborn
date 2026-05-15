@@ -1,4 +1,4 @@
-node_modules/
+xnode_modules/
 dist/
 build/
 coverage/

@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:T+A Internet Steaming Client}/native-mac/CarusoRebornMac",
+            "name": "Debug CarusoRebornMac (native-mac/CarusoRebornMac)",
+            "target": "CarusoRebornMac",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug CarusoRebornMac (native-mac/CarusoRebornMac)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:T+A Internet Steaming Client}/native-mac/CarusoRebornMac",
+            "name": "Release CarusoRebornMac (native-mac/CarusoRebornMac)",
+            "target": "CarusoRebornMac",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release CarusoRebornMac (native-mac/CarusoRebornMac)"
+        }
+    ]
+}

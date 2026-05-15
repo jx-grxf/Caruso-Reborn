@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -17,6 +18,9 @@ struct CarusoRebornMacApp: App {
                 .frame(minWidth: 1100, minHeight: 760)
                 .task {
                     await model.bootstrap()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    backend.stopOwnedBackendForTermination()
                 }
         }
 

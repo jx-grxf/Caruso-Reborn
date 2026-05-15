@@ -630,19 +630,23 @@ export async function createApp(dataDir: string, options?: {
   });
 
   app.get("/api/tunein/search", async (request) => {
-    const query = (request.query as { q?: string }).q?.trim();
+    const { q, source } = request.query as { q?: string; source?: string };
+    const query = q?.trim();
     if (!query) {
       return { items: [] };
     }
 
-    const [tuneInItems, radioBrowserItems] = await Promise.allSettled([
-      searchStations(query),
-      searchRadioBrowserStations(query)
-    ]);
+    const tuneInItems = await searchStations(query);
+    const radioBrowserItems = source === "tunein"
+      ? []
+      : await searchRadioBrowserStations(query).catch((error) => {
+        app.log.warn({ error, query }, "Radio Browser search failed");
+        return [];
+      });
 
     const merged = [
-      ...(tuneInItems.status === "fulfilled" ? tuneInItems.value : []),
-      ...(radioBrowserItems.status === "fulfilled" ? radioBrowserItems.value : [])
+      ...tuneInItems,
+      ...radioBrowserItems
     ];
 
     const deduped = new Map<string, typeof merged[number]>();

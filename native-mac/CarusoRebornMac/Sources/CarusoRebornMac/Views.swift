@@ -38,6 +38,7 @@ struct RootView: View {
         } message: {
             Text(model.lastError ?? backend.lastError ?? "Unbekannter Fehler")
         }
+        .background(MainWindowController())
     }
 }
 
@@ -90,10 +91,12 @@ struct DashboardView: View {
                     .modifier(EntranceMotion(delay: 0.14))
                 rendererSection
                     .modifier(EntranceMotion(delay: 0.20))
-                favoritesSection
+                tuneInSection
                     .modifier(EntranceMotion(delay: 0.26))
-                librarySection
+                favoritesSection
                     .modifier(EntranceMotion(delay: 0.32))
+                librarySection
+                    .modifier(EntranceMotion(delay: 0.38))
             }
             .frame(maxWidth: 980)
             .padding(.horizontal, 12)
@@ -298,6 +301,100 @@ struct DashboardView: View {
         }
     }
 
+    private var tuneInSection: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 18) {
+                sectionHeader("TuneIn Browser", subtitle: "Suche Sender, browsere durch TuneIn und füge neue Favoriten direkt in die Caruso-Senderliste ein.")
+
+                HStack(spacing: 12) {
+                    TextField("NDR 2 / BBC 6 / Bayern 3", text: $model.tuneInQuery)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(model.isTuneInLoading)
+                        .onSubmit {
+                            Task {
+                                await model.runTuneInSearch()
+                            }
+                        }
+
+                    AdaptiveButton("Suchen", prominent: true) {
+                        Task {
+                            await model.runTuneInSearch()
+                        }
+                    }
+                    .disabled(model.isTuneInLoading)
+                }
+
+                if model.isTuneInLoading {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("TuneIn lädt …")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let tuneInError = model.tuneInError {
+                    Text(tuneInError)
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                }
+
+                if !model.tuneInSearchResults.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Suche")
+                            .font(.headline)
+
+                        ForEach(model.tuneInSearchResults) { item in
+                            tuneInRow(for: item)
+                        }
+                    }
+                    .animation(.spring(response: 0.42, dampingFraction: 0.84), value: model.tuneInSearchResults.map(\.id))
+                }
+
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Browse")
+                            .font(.headline)
+                        Spacer()
+                        AdaptiveButton("Root") {
+                            Task {
+                                await model.browseTuneInRoot()
+                            }
+                        }
+                        .disabled(model.tuneInBrowseStack.isEmpty || model.isTuneInLoading)
+                        AdaptiveButton("Zurück") {
+                            Task {
+                                await model.browseTuneInBack()
+                            }
+                        }
+                        .disabled(model.tuneInBrowseStack.isEmpty || model.isTuneInLoading)
+                    }
+
+                    Text(model.tuneInBrowseStack.isEmpty ? "TuneIn" : (["TuneIn"] + model.tuneInBrowseStack.map(\.text)).joined(separator: " / "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+
+                    if model.tuneInBrowseItems.isEmpty {
+                        Text("Noch keine TuneIn-Browse-Ergebnisse geladen.")
+                            .foregroundStyle(.secondary)
+                            .task {
+                                await model.refreshTuneInBrowseRootIfNeeded()
+                            }
+                    } else {
+                        ForEach(model.tuneInBrowseItems) { item in
+                            tuneInRow(for: item)
+                        }
+                    }
+                }
+                .animation(.spring(response: 0.42, dampingFraction: 0.84), value: model.tuneInBrowseItems.map(\.id))
+            }
+        }
+    }
+
     private func metricCard(_ title: String, _ value: String) -> some View {
         GlassPanel(cornerRadius: 24, padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
@@ -323,6 +420,54 @@ struct DashboardView: View {
                 .textSelection(.enabled)
             Spacer()
         }
+    }
+
+    @ViewBuilder
+    private func tuneInRow(for item: TuneInStation) -> some View {
+        GlassRow {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.text)
+                    .font(.headline)
+                Text(tuneInMetadata(for: item))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        } trailing: {
+            HStack(spacing: 10) {
+                if item.type == "link", item.actions?.browse != nil || item.actions?.play != nil {
+                    AdaptiveButton("Öffnen") {
+                        Task {
+                            await model.openTuneInItem(item)
+                        }
+                    }
+                }
+
+                if item.type == "audio", item.actions?.play != nil {
+                    AdaptiveButton("Jetzt spielen") {
+                        Task {
+                            await model.playTuneInStation(item)
+                        }
+                    }
+
+                    AdaptiveButton("Zur Senderliste", prominent: true) {
+                        Task {
+                            await model.addTuneInFavorite(item)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func tuneInMetadata(for item: TuneInStation) -> String {
+        [
+            item.subtext ?? item.type,
+            item.bitrate.map { "\($0) kbps" },
+            item.formats?.uppercased()
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
     }
 }
 
@@ -701,6 +846,18 @@ struct MenuBarExtraView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var backend: BackendController
 
+    private func showMainWindow() {
+        if let existingWindow = NSApp.windows.first(where: { $0.identifier?.rawValue == "caruso-main-window" }) {
+            NSApp.unhide(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            existingWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Caruso Reborn")
@@ -714,7 +871,7 @@ struct MenuBarExtraView: View {
             Divider()
 
             AdaptiveButton("App öffnen", prominent: true) {
-                openWindow(id: "main")
+                showMainWindow()
             }
 
             AdaptiveButton("Web-Dashboard") {
@@ -743,10 +900,63 @@ struct MenuBarExtraView: View {
                     }
                 }
             }
+
+            Divider()
+
+            AdaptiveButton("Beenden") {
+                backend.stopOwnedBackendForTermination()
+                NSApp.terminate(nil)
+            }
         }
         .padding(14)
         .frame(width: 280)
         .modifier(EntranceMotion(delay: 0.02))
+    }
+}
+
+private struct MainWindowController: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            context.coordinator.attach(to: view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            context.coordinator.attach(to: nsView.window)
+        }
+    }
+
+    final class Coordinator: NSObject, NSWindowDelegate {
+        weak var observedWindow: NSWindow?
+
+        @MainActor
+        func attach(to window: NSWindow?) {
+            guard let window else {
+                return
+            }
+
+            if observedWindow === window {
+                return
+            }
+
+            observedWindow = window
+            window.identifier = NSUserInterfaceItemIdentifier("caruso-main-window")
+            window.delegate = self
+        }
+
+        @MainActor
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            sender.orderOut(nil)
+            NSApp.hide(nil)
+            return false
+        }
     }
 }
 

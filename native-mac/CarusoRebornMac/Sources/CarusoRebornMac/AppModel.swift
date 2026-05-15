@@ -92,6 +92,9 @@ final class BackendController: ObservableObject {
 
             await waitUntilHealthy()
         } catch {
+            if shouldIgnore(error: error) {
+                return
+            }
             isRunning = false
             lastError = error.localizedDescription
             latestLogLine = "Backend-Start fehlgeschlagen."
@@ -110,6 +113,17 @@ final class BackendController: ObservableObject {
         isRunning = false
         source = .none
         latestLogLine = "Eigenes Backend wird beendet..."
+    }
+
+    func stopOwnedBackendForTermination() {
+        guard process != nil else {
+            return
+        }
+
+        process?.terminate()
+        process = nil
+        isRunning = false
+        source = .none
     }
 
     func clearError() {
@@ -356,6 +370,20 @@ final class BackendController: ObservableObject {
             userInfo: [NSLocalizedDescriptionKey: message?.isEmpty == false ? message! : "Backend-Build fehlgeschlagen."]
         )
     }
+
+    private func shouldIgnore(error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSUserCancelledError {
+            return true
+        }
+
+        let description = nsError.localizedDescription.lowercased()
+        return description == "abgebrochen" || description == "cancelled"
+    }
 }
 
 @MainActor
@@ -365,6 +393,12 @@ final class AppModel: ObservableObject {
     @Published var discoveredDevices: [DiscoveredDevice] = []
     @Published var networkCandidates: [NetworkCandidate] = []
     @Published var tracks: [LocalTrack] = []
+    @Published var tuneInQuery = ""
+    @Published var tuneInSearchResults: [TuneInStation] = []
+    @Published var tuneInBrowseItems: [TuneInStation] = []
+    @Published var tuneInBrowseStack: [TuneInBrowsePath] = []
+    @Published var tuneInError: String?
+    @Published var isTuneInLoading = false
     @Published var selectedDeviceURL: String?
     @Published var selectedDeviceName: String?
     @Published private(set) var uiLanguage: AppLanguage = AppLanguage.systemDefault
@@ -407,6 +441,15 @@ final class AppModel: ObservableObject {
         }
 
         await refreshAll()
+        if let message = lastError, shouldRetryStartup(for: message) {
+            lastError = nil
+            try? await Task.sleep(for: .milliseconds(900))
+            await backend.refreshReachability()
+            if backend.isRunning {
+                await refreshAll()
+            }
+        }
+        await refreshTuneInBrowseRootIfNeeded()
         startPolling()
         isBootstrapping = false
     }
@@ -433,7 +476,7 @@ final class AppModel: ObservableObject {
             await refreshRendererStatus()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
     }
 
@@ -460,9 +503,10 @@ final class AppModel: ObservableObject {
             syncNetworkSelection(using: status, network: network)
             applyPersistedRendererSelection()
             await refreshRendererStatus()
+            await refreshTuneInBrowseRootIfNeeded()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
     }
 
@@ -517,7 +561,7 @@ final class AppModel: ObservableObject {
             await refreshAll()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
 
         isBusy = false
@@ -548,7 +592,7 @@ final class AppModel: ObservableObject {
             await refreshAll()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
 
         isBusy = false
@@ -583,8 +627,106 @@ final class AppModel: ObservableObject {
             await refreshRendererStatus()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
+    }
+
+    func playTuneInStation(_ station: TuneInStation) async {
+        guard let streamURL = station.actions?.play, !streamURL.isEmpty else {
+            lastError = "Für diesen TuneIn-Eintrag gibt es keinen abspielbaren Stream."
+            return
+        }
+
+        let favorite = FavoriteStation(
+            id: station.guideID ?? normalizedFavoriteID(for: station.text),
+            title: station.text,
+            streamURL: streamURL,
+            subtitle: station.subtext,
+            image: station.image,
+            mimeType: inferredMimeType(for: station),
+            bitrate: station.bitrate
+        )
+
+        await playFavorite(favorite)
+    }
+
+    func addTuneInFavorite(_ station: TuneInStation) async {
+        guard let streamURL = station.actions?.play, !streamURL.isEmpty else {
+            lastError = "Für diesen TuneIn-Eintrag gibt es keinen abspielbaren Stream."
+            return
+        }
+
+        do {
+            let _: TuneInFavoritesResponse = try await request(
+                path: "api/tunein/favorites",
+                method: "POST",
+                body: AddFavoritePayload(
+                    id: station.guideID ?? normalizedFavoriteID(for: station.text),
+                    title: station.text,
+                    streamURL: streamURL,
+                    subtitle: station.subtext,
+                    image: station.image,
+                    bitrate: station.bitrate,
+                    mimeType: inferredMimeType(for: station)
+                )
+            )
+            await refreshAll()
+            lastError = nil
+        } catch {
+            setLastErrorIfNeeded(error)
+        }
+    }
+
+    func runTuneInSearch() async {
+        guard backend.isRunning else { return }
+
+        let query = tuneInQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            tuneInError = "Bitte zuerst einen Suchbegriff eingeben."
+            return
+        }
+
+        isTuneInLoading = true
+        tuneInError = nil
+        do {
+            let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+            let result: TuneInSearchResponse = try await request(path: "api/tunein/search?q=\(encoded)&source=tunein")
+            tuneInSearchResults = Array(result.items.filter { $0.actions?.play != nil }.prefix(18))
+            tuneInError = nil
+        } catch {
+            if !shouldIgnore(error) {
+                tuneInError = error.localizedDescription
+            }
+        }
+        isTuneInLoading = false
+    }
+
+    func refreshTuneInBrowseRootIfNeeded() async {
+        guard backend.isRunning else { return }
+        guard tuneInBrowseItems.isEmpty else { return }
+        await browseTuneIn(url: nil, push: false, label: nil)
+    }
+
+    func browseTuneInRoot() async {
+        guard backend.isRunning else { return }
+        tuneInBrowseStack.removeAll()
+        await browseTuneIn(url: nil, push: false, label: nil)
+    }
+
+    func browseTuneInBack() async {
+        guard backend.isRunning else { return }
+        _ = tuneInBrowseStack.popLast()
+        let previousURL = tuneInBrowseStack.last?.url
+        await browseTuneIn(url: previousURL, push: false, label: nil)
+    }
+
+    func openTuneInItem(_ station: TuneInStation) async {
+        let targetURL = station.actions?.browse ?? station.actions?.play
+        guard let targetURL, !targetURL.isEmpty else {
+            return
+        }
+
+        await browseTuneIn(url: targetURL, push: true, label: station.text)
     }
 
     func playTrack(_ track: LocalTrack) async {
@@ -605,7 +747,7 @@ final class AppModel: ObservableObject {
             await refreshRendererStatus()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
     }
 
@@ -625,7 +767,7 @@ final class AppModel: ObservableObject {
             await refreshAll()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
     }
 
@@ -639,7 +781,7 @@ final class AppModel: ObservableObject {
             await refreshAll()
             lastError = nil
         } catch {
-            lastError = error.localizedDescription
+            setLastErrorIfNeeded(error)
         }
     }
 
@@ -704,6 +846,80 @@ final class AppModel: ObservableObject {
     private func persistDeviceSelection() {
         defaults.set(selectedDeviceURL, forKey: "selectedDeviceURL")
         defaults.set(selectedDeviceName, forKey: "selectedDeviceName")
+    }
+
+    private func setLastErrorIfNeeded(_ error: Error) {
+        if shouldIgnore(error) {
+            return
+        }
+
+        lastError = error.localizedDescription
+    }
+
+    private func browseTuneIn(url: String?, push: Bool, label: String?) async {
+        guard backend.isRunning else { return }
+
+        isTuneInLoading = true
+        tuneInError = nil
+        do {
+            let path: String
+            if let url, !url.isEmpty {
+                let encoded = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url
+                path = "api/tunein/browse?url=\(encoded)"
+            } else {
+                path = "api/tunein/browse"
+            }
+
+            let result: TuneInBrowseResponse = try await request(path: path)
+            if push, let url, let label {
+                tuneInBrowseStack.append(TuneInBrowsePath(text: label, url: url))
+            }
+            tuneInBrowseItems = result.items.filter { $0.type == "link" || $0.type == "audio" }
+            tuneInError = nil
+        } catch {
+            if !shouldIgnore(error) {
+                tuneInError = error.localizedDescription
+            }
+        }
+        isTuneInLoading = false
+    }
+
+    private func inferredMimeType(for station: TuneInStation) -> String {
+        if station.formats?.localizedCaseInsensitiveContains("aac") == true {
+            return "audio/aac"
+        }
+
+        return "audio/mpeg"
+    }
+
+    private func normalizedFavoriteID(for title: String) -> String {
+        let lowered = title.lowercased()
+        let scalars = lowered.unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
+        }
+        let collapsed = String(scalars).replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
+        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+
+    private func shouldIgnore(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSUserCancelledError {
+            return true
+        }
+
+        let description = nsError.localizedDescription.lowercased()
+        return description == "abgebrochen" || description == "cancelled"
+    }
+
+    private func shouldRetryStartup(for message: String) -> Bool {
+        let normalized = message.lowercased()
+        return normalized.contains("verbindung zum server")
+            || normalized.contains("could not connect")
+            || normalized.contains("timed out")
     }
 
     private func startPolling() {

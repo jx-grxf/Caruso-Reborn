@@ -141,6 +141,60 @@ struct TuneInInfo: Decodable {
     let favorites: [FavoriteStation]
 }
 
+struct TuneInStation: Decodable, Identifiable {
+    let type: String
+    let text: String
+    let subtext: String?
+    let image: String?
+    let guideID: String?
+    let bitrate: Int?
+    let formats: String?
+    let key: String?
+    let actions: TuneInActions?
+
+    var id: String {
+        [guideID, text, actions?.play, actions?.browse].compactMap { $0 }.joined(separator: "::")
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case subtext
+        case image
+        case guideID = "guideId"
+        case bitrate
+        case formats
+        case key
+        case actions
+    }
+}
+
+struct TuneInActions: Decodable {
+    let play: String?
+    let browse: String?
+}
+
+struct TuneInSearchResponse: Decodable {
+    let items: [TuneInStation]
+}
+
+struct TuneInBrowseResponse: Decodable {
+    let items: [TuneInStation]
+}
+
+struct TuneInFavoritesResponse: Decodable {
+    let items: [FavoriteStation]
+}
+
+struct TuneInBrowsePath: Identifiable, Hashable {
+    let text: String
+    let url: String
+
+    var id: String {
+        "\(text)|\(url)"
+    }
+}
+
 struct DeezerInfo: Decodable {
     let available: Bool?
     let warning: String
@@ -319,6 +373,26 @@ struct PlayFavoritePayload: Encodable {
         case deviceDescriptionURL = "deviceDescriptionUrl"
         case title
         case streamURL = "streamUrl"
+        case bitrate
+        case mimeType
+    }
+}
+
+struct AddFavoritePayload: Encodable {
+    let id: String?
+    let title: String
+    let streamURL: String
+    let subtitle: String?
+    let image: String?
+    let bitrate: Int?
+    let mimeType: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case streamURL = "streamUrl"
+        case subtitle
+        case image
         case bitrate
         case mimeType
     }
