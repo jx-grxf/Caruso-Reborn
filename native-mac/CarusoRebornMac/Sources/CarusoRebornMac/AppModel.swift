@@ -206,7 +206,7 @@ final class BackendController: ObservableObject {
         }
 
         latestLogLine = "Baue Node-Backend für die native App..."
-        try await runProcess(
+        try await BackendProcessService.runProcess(
             executable: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: ["npm", "run", "build"],
             currentDirectoryURL: repoRoot
@@ -340,35 +340,6 @@ final class BackendController: ObservableObject {
         }
 
         return nil
-    }
-
-    private func runProcess(
-        executable: URL,
-        arguments: [String],
-        currentDirectoryURL: URL
-    ) async throws {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.currentDirectoryURL = currentDirectoryURL
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        if process.terminationStatus == 0 {
-            return
-        }
-
-        let data = try pipe.fileHandleForReading.readToEnd() ?? Data()
-        let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        throw NSError(
-            domain: "CarusoRebornMac",
-            code: Int(process.terminationStatus),
-            userInfo: [NSLocalizedDescriptionKey: message?.isEmpty == false ? message! : "Backend-Build fehlgeschlagen."]
-        )
     }
 
     private func shouldIgnore(error: Error) -> Bool {
@@ -518,8 +489,10 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let encoded = selectedDeviceURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? selectedDeviceURL
-            let result: RendererStatusEnvelope = try await request(path: "api/renderer/status?deviceDescriptionUrl=\(encoded)")
+            let result: RendererStatusEnvelope = try await request(path: makePath(
+                "api/renderer/status",
+                queryItems: [URLQueryItem(name: "deviceDescriptionUrl", value: selectedDeviceURL)]
+            ))
             rendererStatus = result.status
         } catch {
             rendererStatus = nil
@@ -689,8 +662,13 @@ final class AppModel: ObservableObject {
         isTuneInLoading = true
         tuneInError = nil
         do {
-            let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-            let result: TuneInSearchResponse = try await request(path: "api/tunein/search?q=\(encoded)&source=tunein")
+            let result: TuneInSearchResponse = try await request(path: makePath(
+                "api/tunein/search",
+                queryItems: [
+                    URLQueryItem(name: "q", value: query),
+                    URLQueryItem(name: "source", value: "tunein")
+                ]
+            ))
             tuneInSearchResults = Array(result.items.filter { $0.actions?.play != nil }.prefix(18))
             tuneInError = nil
         } catch {
@@ -862,15 +840,17 @@ final class AppModel: ObservableObject {
         isTuneInLoading = true
         tuneInError = nil
         do {
-            let path: String
+            let requestPath: String
             if let url, !url.isEmpty {
-                let encoded = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url
-                path = "api/tunein/browse?url=\(encoded)"
+                requestPath = makePath(
+                    "api/tunein/browse",
+                    queryItems: [URLQueryItem(name: "url", value: url)]
+                )
             } else {
-                path = "api/tunein/browse"
+                requestPath = "api/tunein/browse"
             }
 
-            let result: TuneInBrowseResponse = try await request(path: path)
+            let result: TuneInBrowseResponse = try await request(path: requestPath)
             if push, let url, let label {
                 tuneInBrowseStack.append(TuneInBrowsePath(text: label, url: url))
             }
@@ -920,6 +900,18 @@ final class AppModel: ObservableObject {
         return normalized.contains("verbindung zum server")
             || normalized.contains("could not connect")
             || normalized.contains("timed out")
+    }
+
+    private func makePath(_ path: String, queryItems: [URLQueryItem]) -> String {
+        var components = URLComponents()
+        components.path = "/" + path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.queryItems = queryItems
+
+        guard let value = components.string else {
+            return path
+        }
+
+        return String(value.drop(while: { $0 == "/" }))
     }
 
     private func startPolling() {

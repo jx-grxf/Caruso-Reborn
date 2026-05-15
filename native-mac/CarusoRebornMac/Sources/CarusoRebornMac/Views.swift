@@ -888,7 +888,7 @@ struct MenuBarExtraView: View {
                 }
             }
 
-            if backend.isRunning {
+            if backend.canStopOwnedBackend {
                 AdaptiveButton("Eigenes Backend stoppen") {
                     backend.stopOwnedBackend()
                 }
