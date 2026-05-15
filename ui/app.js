@@ -271,7 +271,8 @@ function renderStatus(status, desktopState) {
   `;
   elements.publicBaseUrlInput.value = status.config.publicBaseUrl || "";
   elements.carusoNameInput.value = status.config.rendererFilterName || "";
-  elements.deezerArlInput.value = status.config.deezerArl || "";
+  elements.deezerArlInput.value = "";
+  elements.deezerArlInput.placeholder = status.config.deezerConfigured ? "Configured - leave blank to keep" : "Optional";
   state.language = status.config.uiLanguage || state.language;
   elements.languageSelect.value = state.language;
   state.folders = status.library.folders;
@@ -785,14 +786,19 @@ elements.languageSelect.addEventListener("change", () => {
     renderFolders();
     renderTracks();
     renderRendererStatus();
+    const payload = {
+      publicBaseUrl: elements.publicBaseUrlInput.value,
+      rendererFilterName: elements.carusoNameInput.value,
+      uiLanguage: state.language
+    };
+    const deezerArl = elements.deezerArlInput.value.trim();
+    if (deezerArl) {
+      payload.deezerArl = deezerArl;
+    }
+
     await api("/api/config", {
       method: "PUT",
-      body: JSON.stringify({
-        publicBaseUrl: elements.publicBaseUrlInput.value,
-        rendererFilterName: elements.carusoNameInput.value,
-        deezerArl: elements.deezerArlInput.value,
-        uiLanguage: state.language
-      })
+      body: JSON.stringify(payload)
     });
   }, "Sprache konnte nicht gespeichert werden.");
 });
@@ -822,14 +828,19 @@ elements.stopServerButton.addEventListener("click", () => {
 elements.configForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void runWithToast(async () => {
+    const payload = {
+      publicBaseUrl: elements.publicBaseUrlInput.value,
+      rendererFilterName: elements.carusoNameInput.value,
+      uiLanguage: state.language
+    };
+    const deezerArl = elements.deezerArlInput.value.trim();
+    if (deezerArl) {
+      payload.deezerArl = deezerArl;
+    }
+
     await api("/api/config", {
       method: "PUT",
-      body: JSON.stringify({
-        publicBaseUrl: elements.publicBaseUrlInput.value,
-        rendererFilterName: elements.carusoNameInput.value,
-        deezerArl: elements.deezerArlInput.value,
-        uiLanguage: state.language
-      })
+      body: JSON.stringify(payload)
     });
     showToast(t("configSaved"));
     await refreshStatus();

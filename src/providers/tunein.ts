@@ -2,6 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fetch } from "undici";
+import { assertPublicHttpUrl } from "../security/url-policy.js";
 
 export type TuneInStation = {
   type: string;
@@ -129,8 +130,9 @@ export async function resolvePlayableUrl(inputUrl: string, depth = 0): Promise<s
     throw new Error("TuneIn stream lookup exceeded redirect depth.");
   }
 
-  const probe = await probeStream(inputUrl);
-  const finalUrl = probe.finalUrl || inputUrl;
+  const safeInputUrl = await assertPublicHttpUrl(inputUrl);
+  const probe = await probeStream(safeInputUrl);
+  const finalUrl = await assertPublicHttpUrl(probe.finalUrl || safeInputUrl);
   if (isAudioContentType(probe.contentType)) {
     return finalUrl;
   }
@@ -162,8 +164,10 @@ function guessMimeTypeFromUrl(url: string): string {
 }
 
 async function probeStream(inputUrl: string): Promise<{ finalUrl: string; contentType: string }> {
+  const safeInputUrl = await assertPublicHttpUrl(inputUrl);
+
   try {
-    const headResponse = await fetch(inputUrl, {
+    const headResponse = await fetch(safeInputUrl, {
       method: "HEAD",
       headers: STREAM_HEADERS,
       signal: AbortSignal.timeout(10000)
@@ -173,18 +177,18 @@ async function probeStream(inputUrl: string): Promise<{ finalUrl: string; conten
       const headContentType = headResponse.headers.get("content-type") || "";
       if (headContentType && !isClearlyHtmlLike(headContentType)) {
         return {
-          finalUrl: headResponse.url || inputUrl,
+          finalUrl: await assertPublicHttpUrl(headResponse.url || safeInputUrl),
           contentType: headContentType
         };
       }
     }
 
-    const getResponse = await fetch(inputUrl, {
+    const getResponse = await fetch(safeInputUrl, {
       headers: STREAM_HEADERS,
       signal: AbortSignal.timeout(10000)
     });
     const contentType = getResponse.headers.get("content-type") || "";
-    const finalUrl = getResponse.url || inputUrl;
+    const finalUrl = await assertPublicHttpUrl(getResponse.url || safeInputUrl);
     await getResponse.body?.cancel().catch(() => undefined);
 
     return {
@@ -196,13 +200,15 @@ async function probeStream(inputUrl: string): Promise<{ finalUrl: string; conten
       throw error;
     }
 
-    return fetchCurlProbe(inputUrl);
+    return fetchCurlProbe(safeInputUrl);
   }
 }
 
 async function fetchTextProbe(inputUrl: string): Promise<{ finalUrl: string; contentType: string; body: string }> {
+  const safeInputUrl = await assertPublicHttpUrl(inputUrl);
+
   try {
-    const response = await fetch(inputUrl, {
+    const response = await fetch(safeInputUrl, {
       headers: STREAM_HEADERS,
       signal: AbortSignal.timeout(10000)
     });
@@ -212,7 +218,7 @@ async function fetchTextProbe(inputUrl: string): Promise<{ finalUrl: string; con
     }
 
     return {
-      finalUrl: response.url || inputUrl,
+      finalUrl: await assertPublicHttpUrl(response.url || safeInputUrl),
       contentType: response.headers.get("content-type") || "",
       body: await response.text()
     };
@@ -221,11 +227,12 @@ async function fetchTextProbe(inputUrl: string): Promise<{ finalUrl: string; con
       throw error;
     }
 
-    return fetchCurlBody(inputUrl);
+    return fetchCurlBody(safeInputUrl);
   }
 }
 
 async function fetchCurlProbe(inputUrl: string): Promise<{ finalUrl: string; contentType: string }> {
+  const safeInputUrl = await assertPublicHttpUrl(inputUrl);
   const { stdout } = await execFileAsync("curl", [
     "-fsSL",
     "--max-time",
@@ -240,17 +247,18 @@ async function fetchCurlProbe(inputUrl: string): Promise<{ finalUrl: string; con
     "/dev/null",
     "-w",
     `\n${CURL_META_MARKER}%{url_effective}\t%{content_type}`,
-    inputUrl
+    safeInputUrl
   ], { encoding: "utf8", maxBuffer: 1024 * 1024 });
 
   const meta = extractCurlMeta(stdout);
   return {
-    finalUrl: meta.finalUrl || inputUrl,
+    finalUrl: await assertPublicHttpUrl(meta.finalUrl || safeInputUrl),
     contentType: meta.contentType || ""
   };
 }
 
 async function fetchCurlBody(inputUrl: string): Promise<{ finalUrl: string; contentType: string; body: string }> {
+  const safeInputUrl = await assertPublicHttpUrl(inputUrl);
   const { stdout } = await execFileAsync("curl", [
     "-fsSL",
     "--max-time",
@@ -261,12 +269,12 @@ async function fetchCurlBody(inputUrl: string): Promise<{ finalUrl: string; cont
     `accept: ${STREAM_HEADERS.accept}`,
     "-w",
     `\n${CURL_META_MARKER}%{url_effective}\t%{content_type}`,
-    inputUrl
+    safeInputUrl
   ], { encoding: "utf8", maxBuffer: 1024 * 1024 * 2 });
 
   const meta = extractCurlMeta(stdout);
   return {
-    finalUrl: meta.finalUrl || inputUrl,
+    finalUrl: await assertPublicHttpUrl(meta.finalUrl || safeInputUrl),
     contentType: meta.contentType || "",
     body: meta.body
   };

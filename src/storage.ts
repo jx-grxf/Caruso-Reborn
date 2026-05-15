@@ -160,7 +160,9 @@ export class AppStorage {
     }
 
     await fs.mkdir(this.dataDir, { recursive: true });
-    await fs.writeFile(this.filePath, JSON.stringify(this.state, null, 2), "utf8");
+    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tempPath, JSON.stringify(this.state, null, 2), "utf8");
+    await fs.rename(tempPath, this.filePath);
   }
 }
 

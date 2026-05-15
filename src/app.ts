@@ -1,7 +1,6 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -24,6 +23,7 @@ import { getDeezerCapabilities } from "./providers/deezer.js";
 import { searchRadioBrowserStations } from "./providers/radio-browser.js";
 import { browseDirectory, inspectStream, resolvePlayableUrl, searchStations } from "./providers/tunein.js";
 import { detectDefaultTargetPlatform, getHostDisplayName, normalizeTargetPlatform } from "./platform.js";
+import { parseAndValidateUrl, UrlPolicyError } from "./security/url-policy.js";
 import { AppStorage, type PersistedConfig, type TuneInFavorite } from "./storage.js";
 import { fetchDeviceDescription } from "./upnp/device-description.js";
 import { discoverUpnpDevices } from "./upnp/discovery.js";
@@ -126,6 +126,15 @@ function mergeConfig(runtimeConfig: PersistedConfig): PersistedConfig {
     deezerArl: runtimeConfig.deezerArl || baseConfig.deezerArl,
     uiLanguage: runtimeConfig.uiLanguage || "de",
     targetPlatform
+  };
+}
+
+function redactConfig(runtimeConfig: PersistedConfig): Omit<PersistedConfig, "deezerArl"> & { deezerConfigured: boolean } {
+  const merged = mergeConfig(runtimeConfig);
+  const { deezerArl, ...safeConfig } = merged;
+  return {
+    ...safeConfig,
+    deezerConfigured: Boolean(deezerArl)
   };
 }
 
@@ -306,75 +315,6 @@ function resolveRequestBaseUrl(hostHeader: string | undefined, fallbackBaseUrl: 
   }
 }
 
-function isPrivateHostname(hostname: string): boolean {
-  if (hostname === "localhost") {
-    return true;
-  }
-
-  const normalizedHostname = hostname.replace(/^\[|\]$/g, "");
-  const ipVersion = net.isIP(normalizedHostname);
-
-  if (ipVersion === 4) {
-    const [a, b] = hostname.split(".").map(Number);
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
-    );
-  }
-
-  if (ipVersion === 6) {
-    const compact = normalizedHostname.toLowerCase();
-    return (
-      compact === "::1" ||
-      compact.startsWith("fe8") ||
-      compact.startsWith("fe9") ||
-      compact.startsWith("fea") ||
-      compact.startsWith("feb") ||
-      compact.startsWith("fc") ||
-      compact.startsWith("fd")
-    );
-  }
-
-  return normalizedHostname.endsWith(".local");
-}
-
-function parseAndValidateUrl(rawValue: string, options?: {
-  allowedHosts?: string[];
-  allowPrivateHosts?: boolean;
-  allowHostnames?: boolean;
-}): URL {
-  let parsed: URL;
-
-  try {
-    parsed = new URL(rawValue);
-  } catch {
-    throw new HttpError("Invalid URL.", 400);
-  }
-
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new HttpError("Only http and https URLs are supported.", 400);
-  }
-
-  if (options?.allowedHosts && !options.allowedHosts.includes(parsed.hostname)) {
-    throw new HttpError("URL host is not allowed.", 400);
-  }
-
-  if (!options?.allowPrivateHosts && isPrivateHostname(parsed.hostname)) {
-    throw new HttpError("Private or local network URLs are not allowed here.", 400);
-  }
-
-  if (options?.allowHostnames === false && !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(parsed.hostname)) {
-    throw new HttpError("Renderer URL must use an IPv4 address.", 400);
-  }
-
-  return parsed;
-}
-
 async function assertKnownRendererUrl(deviceDescriptionUrl: string) {
   const discoveredDevices = await discoverUpnpDevices();
   const isKnownDevice = discoveredDevices.some((device) => device.location === deviceDescriptionUrl);
@@ -507,7 +447,7 @@ export async function createApp(dataDir: string, options?: {
         friendlyName: context.upnp.friendlyName,
         deviceDescriptionUrl: new URL("/upnp/device-description.xml", runtimeConfig.publicBaseUrl || baseConfig.publicBaseUrl).toString()
       },
-      config: runtimeConfig,
+      config: redactConfig(await storage.getConfig()),
       library: {
         folders: librarySnapshot.folders,
         trackCount: librarySnapshot.tracks.length
@@ -520,8 +460,7 @@ export async function createApp(dataDir: string, options?: {
   });
 
   app.get("/api/config", async () => {
-    const runtimeConfig = mergeConfig(await storage.getConfig());
-    return runtimeConfig;
+    return redactConfig(await storage.getConfig());
   });
 
   app.get("/api/network/candidates", async () => {
@@ -572,18 +511,23 @@ export async function createApp(dataDir: string, options?: {
 
   app.put("/api/config", async (request) => {
     const body = request.body as PersistedConfig;
-    const nextConfig = await storage.updateConfig({
+    const configPatch: PersistedConfig = {
       publicBaseUrl: body.publicBaseUrl?.trim() || undefined,
       rendererFilterName: body.rendererFilterName?.trim() || body.carusoFriendlyName?.trim() || undefined,
-      deezerArl: body.deezerArl?.trim() || undefined,
       uiLanguage: body.uiLanguage === "en" ? "en" : "de",
       targetPlatform: normalizeTargetPlatform(body.targetPlatform)
-    });
+    };
+
+    if (Object.hasOwn(body, "deezerArl")) {
+      configPatch.deezerArl = body.deezerArl?.trim() || undefined;
+    }
+
+    const nextConfig = await storage.updateConfig(configPatch);
 
     const mergedConfig = mergeConfig(nextConfig);
     context.upnp.friendlyName = buildServerFriendlyName(mergedConfig.carusoFriendlyName, mergedConfig.targetPlatform);
 
-    return mergedConfig;
+    return redactConfig(nextConfig);
   });
 
   app.get("/api/discover", async () => {
@@ -1059,7 +1003,7 @@ export async function createApp(dataDir: string, options?: {
 
   app.setErrorHandler((error, _request, reply) => {
     app.log.error(error);
-    const statusCode = error instanceof HttpError ? error.statusCode : 500;
+    const statusCode = error instanceof HttpError || error instanceof UrlPolicyError ? error.statusCode : 500;
     reply.code(statusCode).send({
       error: error instanceof Error ? error.message : "Unknown error"
     });
