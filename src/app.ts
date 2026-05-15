@@ -1,13 +1,9 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
-import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
-import ffmpegPath from "ffmpeg-static";
 import Fastify from "fastify";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -24,6 +20,13 @@ import { searchRadioBrowserStations } from "./providers/radio-browser.js";
 import { browseDirectory, inspectStream, resolvePlayableUrl, searchStations } from "./providers/tunein.js";
 import { detectDefaultTargetPlatform, getHostDisplayName, normalizeTargetPlatform } from "./platform.js";
 import { parseAndValidateUrl, UrlPolicyError } from "./security/url-policy.js";
+import {
+  applyStreamHeaders,
+  isSupportedStreamMimeType,
+  sendTranscodedMp3Stream,
+  shouldTranscodeForCaruso,
+  STREAM_REQUEST_HEADERS
+} from "./services/streaming.js";
 import { AppStorage, type PersistedConfig, type TuneInFavorite } from "./storage.js";
 import { fetchDeviceDescription } from "./upnp/device-description.js";
 import { discoverUpnpDevices } from "./upnp/discovery.js";
@@ -231,72 +234,6 @@ function computeContentUpdateId(input: {
   }
 
   return String(hash || 1);
-}
-
-function dlnaContentFeaturesForMimeType(mimeType: string): string {
-  if (mimeType === "audio/mpeg") {
-    return "DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000";
-  }
-
-  if (mimeType === "audio/aac") {
-    return "DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000";
-  }
-
-  return "DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000";
-}
-
-function isSupportedStreamMimeType(mimeType: string): boolean {
-  return ["audio/mpeg", "audio/aac", "audio/flac"].includes(mimeType);
-}
-
-function shouldTranscodeForCaruso(mimeType: string): boolean {
-  return mimeType.toLowerCase().includes("aac");
-}
-
-function applyStreamHeaders(reply: FastifyReply, mimeType: string) {
-  reply.header("content-type", mimeType);
-  reply.header("cache-control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  reply.header("pragma", "no-cache");
-  reply.header("expires", "0");
-  reply.header("transferMode.dlna.org", "Streaming");
-  reply.header("contentFeatures.dlna.org", dlnaContentFeaturesForMimeType(mimeType));
-  reply.header("accept-ranges", "none");
-  reply.header("icy-metadata", "0");
-}
-
-async function sendTranscodedMp3Stream(reply: FastifyReply, upstream: Response) {
-  const resolvedFfmpegPath = ffmpegPath as unknown as string | null;
-  if (!resolvedFfmpegPath) {
-    throw new Error("ffmpeg is not available for AAC transcoding.");
-  }
-
-  const sourceStream = upstream.body ? Readable.fromWeb(upstream.body as unknown as WebReadableStream) : undefined;
-  if (!sourceStream) {
-    throw new Error("Upstream stream body is missing.");
-  }
-
-  const ffmpeg: ChildProcessWithoutNullStreams = spawn(resolvedFfmpegPath, [
-    "-loglevel", "error",
-    "-i", "pipe:0",
-    "-vn",
-    "-acodec", "libmp3lame",
-    "-b:a", "192k",
-    "-f", "mp3",
-    "pipe:1"
-  ], {
-    stdio: ["pipe", "pipe", "pipe"]
-  });
-
-  sourceStream.on("error", () => {
-    ffmpeg.kill("SIGKILL");
-  });
-
-  ffmpeg.stdin.on("error", () => undefined);
-  ffmpeg.stderr.on("data", () => undefined);
-  sourceStream.pipe(ffmpeg.stdin);
-
-  applyStreamHeaders(reply, "audio/mpeg");
-  return reply.send(ffmpeg.stdout);
 }
 
 function resolveRequestBaseUrl(hostHeader: string | undefined, fallbackBaseUrl: string): string {
@@ -828,10 +765,7 @@ export async function createApp(dataDir: string, options?: {
 
     const resolved = await resolvePlayableUrl(parseAndValidateUrl(source).toString());
     const upstream = await fetch(resolved, {
-      headers: {
-        "user-agent": "CarusoReborn/0.2.0",
-        "accept": "audio/mpeg,audio/aac,audio/*,*/*;q=0.8"
-      }
+      headers: STREAM_REQUEST_HEADERS
     });
 
     if (!upstream.ok || !upstream.body) {
@@ -863,10 +797,7 @@ export async function createApp(dataDir: string, options?: {
     parseAndValidateUrl(source);
     const inspected = await inspectStream(source);
     const upstream = await fetch(inspected.resolvedUrl, {
-      headers: {
-        "user-agent": "CarusoReborn/0.2.0",
-        "accept": "audio/mpeg,audio/aac,audio/*,*/*;q=0.8"
-      }
+      headers: STREAM_REQUEST_HEADERS
     });
     if (!upstream.ok || !upstream.body) {
       return reply.code(502).send({ error: `Could not open upstream stream (${upstream.status}).` });
