@@ -59,6 +59,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Check Swift toolchain
+        id: swift-toolchain
+        run: |
+          version="$(swift --version | head -n 1)"
+          echo "$version"
+          if echo "$version" | grep -Eq 'Swift version (6\.[3-9]|[7-9]\.)'; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping native SwiftPM build because this runner does not provide Swift 6.3+."
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and test Swift package
+        if: steps.swift-toolchain.outputs.supported == 'true'
         working-directory: native-mac/CarusoRebornMac
         run: swift test
