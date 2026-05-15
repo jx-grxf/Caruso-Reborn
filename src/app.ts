@@ -517,7 +517,9 @@ export async function createApp(dataDir: string, options?: {
       return { items: [] };
     }
 
-    const tuneInItems = await searchStations(query);
+    const tuneInItems = source === "radio-browser"
+      ? []
+      : await searchStations(query);
     const radioBrowserItems = source === "tunein"
       ? []
       : await searchRadioBrowserStations(query).catch((error) => {

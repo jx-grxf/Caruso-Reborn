@@ -12,6 +12,8 @@ const translations = {
     quality: "Qualitaet",
     position: "Position",
     publicUrl: "Public URL",
+    networkTitle: "Netzwerkadapter",
+    networkLead: "Waehle die Adresse, die dein Caruso im lokalen Netzwerk erreichen kann.",
     serverConfig: "Server & Konfiguration",
     serverMetricsTitle: "Server",
     startServer: "Server starten",
@@ -55,6 +57,7 @@ const translations = {
     searchNeeded: "Bitte einen Suchbegriff eingeben.",
     folderAdded: "Musikordner hinzugefuegt.",
     configSaved: "Konfiguration gespeichert.",
+    networkSaved: "Netzwerkadresse gespeichert.",
     favoritesSaved: "Sender zur Caruso-Senderliste hinzugefuegt.",
     playNowStarted: "Sender wird am Caruso abgespielt.",
     favoriteRemoved: "Sender entfernt.",
@@ -77,6 +80,8 @@ const translations = {
     quality: "Quality",
     position: "Position",
     publicUrl: "Public URL",
+    networkTitle: "Network adapter",
+    networkLead: "Choose the address your Caruso can reach on the local network.",
     serverConfig: "Server & Configuration",
     serverMetricsTitle: "Server",
     startServer: "Start server",
@@ -120,6 +125,7 @@ const translations = {
     searchNeeded: "Please enter a search term.",
     folderAdded: "Music folder added.",
     configSaved: "Configuration saved.",
+    networkSaved: "Network address saved.",
     favoritesSaved: "Station added to the Caruso list.",
     playNowStarted: "Station is now playing on the Caruso.",
     favoriteRemoved: "Station removed.",
@@ -142,6 +148,8 @@ const state = {
   radioBrowserItems: [],
   browseItems: [],
   browseStack: [],
+  networkCandidates: [],
+  recommendedNetwork: null,
   favorites: [],
   rendererStatus: null
 };
@@ -159,7 +167,7 @@ const sectionRoutes = {
 const elements = Object.fromEntries(
   [
     "refreshButton", "languageSelect", "serverBadge", "statusSummary", "startServerButton", "stopServerButton",
-    "configForm", "publicBaseUrlInput", "carusoNameInput", "deezerArlInput", "discoverButton", "deviceList", "tuneinQueryInput",
+    "configForm", "publicBaseUrlInput", "carusoNameInput", "deezerArlInput", "networkCandidateList", "discoverButton", "deviceList", "tuneinQueryInput",
     "tuneinSearchButton", "tuneinResults", "radioBrowserQueryInput", "radioBrowserSearchButton", "radioBrowserResults", "tuneinBrowseResults", "browseBackButton", "browseRootButton", "browsePathLabel", "favoriteStations", "folderInput", "chooseFolderButton", "addFolderButton", "libraryFolders",
     "localTracks", "toast", "selectedRendererLabel", "transportStateLabel", "currentTitleLabel", "qualityLabel", "positionLabel", "publicUrlLabel", "serverMetrics"
   ].map((id) => [id, document.querySelector(`#${id}`)])
@@ -281,6 +289,35 @@ function renderStatus(status, desktopState) {
   renderFolders();
   renderFavorites();
   renderServerMetrics(status.server.metrics);
+}
+
+function renderNetworkCandidates() {
+  if (state.networkCandidates.length === 0) {
+    elements.networkCandidateList.innerHTML = `<div class="empty">${state.language === "en" ? "No network adapters found." : "Keine Netzwerkadapter gefunden."}</div>`;
+    return;
+  }
+
+  const currentBaseUrl = elements.publicBaseUrlInput.value.trim();
+  elements.networkCandidateList.innerHTML = state.networkCandidates.map((candidate) => {
+    const selected = currentBaseUrl === candidate.baseUrl;
+    const recommended = state.recommendedNetwork?.address === candidate.address && state.recommendedNetwork?.interfaceName === candidate.interfaceName;
+    return `
+      <div class="item ${selected ? "item-selected" : ""}">
+        <div class="item-row">
+          <div>
+            <strong>${escapeHtml(candidate.interfaceName)}${recommended ? ` <span class="pill pill-success">${state.language === "en" ? "Recommended" : "Empfohlen"}</span>` : ""}</strong>
+            <div class="meta">${escapeHtml(candidate.baseUrl)}${candidate.isVirtual ? ` · ${state.language === "en" ? "VPN / virtual" : "VPN / virtuell"}` : ""}</div>
+          </div>
+          <button class="button ${selected ? "button-secondary" : "button-ghost"}" data-select-network="${encodeURIComponent(JSON.stringify({
+            interfaceName: candidate.interfaceName,
+            address: candidate.address
+          }))}">
+            ${selected ? t("selected") : t("select")}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderServerMetrics(metrics) {
@@ -622,6 +659,16 @@ async function refreshTracks() {
   renderTracks();
 }
 
+async function refreshNetworkCandidates() {
+  const result = await api("/api/network/candidates");
+  state.networkCandidates = result.candidates || [];
+  state.recommendedNetwork = {
+    address: result.recommendedAddress,
+    interfaceName: result.recommendedInterfaceName
+  };
+  renderNetworkCandidates();
+}
+
 async function browseTuneIn(url = null, push = false, label = null) {
   const endpoint = url ? `/api/tunein/browse?url=${encodeURIComponent(url)}` : "/api/tunein/browse";
   const result = await api(endpoint);
@@ -656,7 +703,7 @@ async function runTuneInSearch() {
     return;
   }
 
-  const result = await api(`/api/tunein/search?q=${encodeURIComponent(query)}`);
+  const result = await api(`/api/tunein/search?q=${encodeURIComponent(query)}&source=radio-browser`);
   state.tuneinItems = result.items.filter((item) => item.actions?.play && item.key !== "radio-browser");
   renderTuneIn();
 }
@@ -767,7 +814,7 @@ async function addFolder(folderPath) {
 
 elements.refreshButton.addEventListener("click", () => {
   void runWithToast(async () => {
-    await Promise.all([refreshStatus(), refreshDevices(), refreshTracks()]);
+    await refreshCoreData();
   }, "Aktualisieren fehlgeschlagen.");
 });
 
@@ -785,6 +832,7 @@ elements.languageSelect.addEventListener("change", () => {
     renderFavorites();
     renderFolders();
     renderTracks();
+    renderNetworkCandidates();
     renderRendererStatus();
     const payload = {
       publicBaseUrl: elements.publicBaseUrlInput.value,
@@ -967,6 +1015,23 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const networkPayload = actionTarget.getAttribute("data-select-network");
+  if (networkPayload) {
+    const selection = JSON.parse(decodeURIComponent(networkPayload));
+    await api("/api/network/select", {
+      method: "POST",
+      body: JSON.stringify({
+        ...selection,
+        mode: "manual"
+      })
+    });
+    elements.publicBaseUrlInput.value = `http://${selection.address}:3847`;
+    await refreshStatus();
+    await refreshNetworkCandidates();
+    showToast(t("networkSaved"));
+    return;
+  }
+
   const favoritePayload = actionTarget.getAttribute("data-add-favorite");
   if (favoritePayload) {
     await addFavorite(JSON.parse(decodeURIComponent(favoritePayload)), actionTarget);
@@ -994,10 +1059,32 @@ document.addEventListener("click", (event) => {
   }, "Aktion fehlgeschlagen.");
 });
 
-await runWithToast(async () => {
-  await Promise.all([refreshStatus(), refreshDevices(), refreshTracks(), browseTuneIn(null, false, null)]);
-  renderRadioBrowser();
-}, "Initiales Laden fehlgeschlagen.");
+async function refreshCoreData() {
+  const results = await Promise.allSettled([
+    refreshStatus(),
+    refreshNetworkCandidates(),
+    refreshDevices(),
+    refreshTracks(),
+    browseTuneIn(null, false, null)
+  ]);
+
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length > 0) {
+    showToast(`${failed.length} ${state.language === "en" ? "panel(s) could not load." : "Bereich(e) konnten nicht geladen werden."}`);
+  }
+}
+
+applyTranslations();
+renderDevices();
+renderTuneIn();
+renderRadioBrowser();
+renderFavorites();
+renderFolders();
+renderTracks();
+renderNetworkCandidates();
+renderRendererStatus();
+
+await refreshCoreData();
 
 focusCurrentHash("auto");
 setInterval(() => {

@@ -18,6 +18,9 @@
             <a href="#dashboard" class="pill pill-link">Dashboard</a>
             <a href="#settings" class="pill pill-link">Settings</a>
             <a href="#devices" class="pill pill-link">Renderer</a>
+            <a href="#search" class="pill pill-link">Search</a>
+            <a href="#browse" class="pill pill-link">Browse</a>
+            <a href="#favorites" class="pill pill-link">Favorites</a>
             <a href="#library" class="pill pill-link">Library</a>
           </nav>
         </div>
@@ -69,6 +72,13 @@
             <h2 data-i18n="serverConfig"></h2>
           </div>
           <div id="statusSummary" class="kv"></div>
+          <div class="top-gap">
+            <div class="panel-subheader">
+              <h3 data-i18n="networkTitle"></h3>
+              <span class="small-copy" data-i18n="networkLead"></span>
+            </div>
+            <div id="networkCandidateList" class="list compact"></div>
+          </div>
           <div class="toolbar">
             <button id="startServerButton" class="button" data-i18n="startServer"></button>
             <button id="stopServerButton" class="button button-secondary" data-i18n="stopServer"></button>
@@ -76,15 +86,15 @@
           <form id="configForm" class="stack top-gap">
             <label>
               <span data-i18n="publicUrl"></span>
-              <input id="publicBaseUrlInput" name="publicBaseUrl" placeholder="http://192.168.x.y:3847" />
+              <input id="publicBaseUrlInput" name="publicBaseUrl" aria-label="Public URL" placeholder="http://192.168.x.y:3847" />
             </label>
             <label>
               <span data-i18n="carusoFilter"></span>
-              <input id="carusoNameInput" name="rendererFilterName" placeholder="Caruso" />
+              <input id="carusoNameInput" name="rendererFilterName" aria-label="Caruso filter" placeholder="Caruso" />
             </label>
             <label>
               <span data-i18n="deezerArl"></span>
-              <input id="deezerArlInput" name="deezerArl" type="password" autocomplete="off" placeholder="Optional" />
+              <input id="deezerArlInput" name="deezerArl" type="password" autocomplete="off" aria-label="Deezer ARL" placeholder="Optional" />
             </label>
             <button class="button" type="submit" data-i18n="saveConfig"></button>
           </form>
@@ -118,7 +128,7 @@
             <h2 data-i18n="tuneinTitle"></h2>
           </div>
           <div class="toolbar">
-            <input id="tuneinQueryInput" placeholder="NDR 2 / FFH / BBC 6" />
+            <input id="tuneinQueryInput" aria-label="TuneIn search" placeholder="NDR 2 / FFH / BBC 6" />
             <button id="tuneinSearchButton" class="button" data-i18n="search"></button>
           </div>
           <div id="tuneinResults" class="list"></div>
@@ -129,7 +139,7 @@
             <h2 data-i18n="radioBrowserTitle"></h2>
           </div>
           <div class="toolbar">
-            <input id="radioBrowserQueryInput" placeholder="BBC Radio 3 / SomaFM / FLAC" />
+            <input id="radioBrowserQueryInput" aria-label="Radio Browser search" placeholder="BBC Radio 3 / SomaFM / FLAC" />
             <button id="radioBrowserSearchButton" class="button" data-i18n="search"></button>
           </div>
           <p class="small-copy" data-i18n="radioBrowserLead"></p>
@@ -157,14 +167,14 @@
             </div>
           </div>
           <div class="toolbar">
-            <input id="folderInput" placeholder="/Pfad/zur/Musik" />
+            <input id="folderInput" aria-label="Music folder path" placeholder="/Pfad/zur/Musik" />
           </div>
           <div id="libraryFolders" class="list compact"></div>
           <div id="localTracks" class="list"></div>
         </section>
       </main>
 
-      <div id="toast" class="toast hidden"></div>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </div>
     <script type="module" src="/app.js?v=20260328-15"></script>
   </body>

@@ -170,6 +170,14 @@ input {
   transform: translateY(-1px);
 }
 
+.button:focus-visible,
+.select:focus-visible,
+input:focus-visible,
+.pill-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .button,
 .select,
 input {
@@ -220,6 +228,16 @@ input {
   margin-bottom: 16px;
 }
 
+.panel-subheader {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.panel-subheader h3 {
+  margin: 0;
+}
+
 .status-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -236,6 +254,11 @@ input {
 .item {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.item-selected {
+  border-color: rgba(33, 193, 214, 0.35);
+  background: rgba(33, 193, 214, 0.08);
 }
 
 .pill-row {
