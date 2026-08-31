@@ -457,11 +457,11 @@ export async function createApp(dataDir: string, options?: {
     maxAge: 0,
     immutable: false,
     etag: false,
-    setHeaders: (res, filePath) => {
+    setHeaders: (reply, filePath) => {
       if (filePath.endsWith(".html") || filePath.endsWith(".js") || filePath.endsWith(".css")) {
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
+        reply.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        reply.header("Pragma", "no-cache");
+        reply.header("Expires", "0");
       }
     }
   });
